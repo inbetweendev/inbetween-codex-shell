@@ -1,6 +1,6 @@
 {
   "name": "@inbetweenai/codex-shell",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Wrapper around Codex CLI that injects InBetween messages into the live conversation via codex app-server",
   "type": "module",
   "bin": {
