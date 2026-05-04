@@ -4,20 +4,24 @@
  * delivers InBetween messages directly into the live conversation via the
  * codex app-server JSON-RPC protocol.
  *
- * Architecture (v0.0.5+):
+ * Architecture (v0.1.0+, layered-auth flow):
  *   1. Spawn `codex app-server --listen ws://127.0.0.1:0` in the background
  *      (stdio piped — we read its port from stderr).
  *   2. Open WS to the app-server, listen for `thread/started` from the TUI,
  *      capture its threadId.
- *   3. Open WS to the InBetween backend (Authorization: Bearer <auth_token>).
- *   4. Spawn `codex --remote ws://127.0.0.1:PORT --dangerously-bypass-approvals-and-sandbox`
+ *   3. Spawn `codex --remote ws://127.0.0.1:PORT --dangerously-bypass-approvals-and-sandbox`
  *      with stdio: 'inherit' — Codex TUI takes over the *current* terminal.
- *      No second window. Wrapper logs go to a file instead of stderr so they
- *      don't corrupt Codex's alt-screen rendering.
- *   5. When backend sends `new_message` → `turn/start` in Codex (or
- *      `turn/steer` if a turn is already active). Dedup by message_id so a
- *      WS reconnect that replays pending messages doesn't double-inject.
- *   6. When the Codex TUI exits, the wrapper exits.
+ *   4. Watch ~/.inbetween/sessions/<cwdHash>.json for the agent token written
+ *      by the InBetween MCP server when the user pastes a chat onboarding
+ *      prompt (which calls agent_login(token) inside Codex). The MCP writes
+ *      this file on every agent_login so we can pick it up.
+ *   5. Once the token is known, open WS to the InBetween backend
+ *      (Authorization: Bearer <auth_token>). Re-auth on agent change.
+ *   6. When backend sends `new_message` → `turn/start` in Codex (or
+ *      `turn/steer` if a turn is already active). Dedup by message_id.
+ *   7. When the Codex TUI exits, the wrapper exits.
+ *
+ * No config file is required at startup. Identity arrives at runtime.
  */
 
 import { spawn } from "node:child_process";
@@ -27,43 +31,35 @@ import {
   existsSync,
   mkdirSync,
   appendFileSync,
+  watch,
 } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { WebSocket } from "ws";
 
 // ---------------------------------------------------------------------------
-// CONFIG
+// CONFIG — backend URLs only. No auth at startup.
 // ---------------------------------------------------------------------------
-function resolveConfigPath() {
-  const explicit =
-    process.env.INBETWEEN_CONFIG_PATH || process.env.AGENTGRAM_CONFIG_PATH;
-  if (explicit) return explicit;
-  const localPath = join(process.cwd(), ".inbetween", "config.json");
-  if (existsSync(localPath)) return localPath;
-  const newPath = join(homedir(), ".inbetween", "config.json");
-  if (existsSync(newPath)) return newPath;
-  return join(homedir(), ".agentgram", "config.json");
-}
+const DEFAULT_BACKEND_WS_URL = "wss://agentgram-test.up.railway.app/ws";
+const BACKEND_WS_URL = process.env.INBETWEEN_WS_URL || DEFAULT_BACKEND_WS_URL;
 
-const CONFIG_PATH = resolveConfigPath();
-let config;
-try {
-  config = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-} catch (e) {
-  process.stderr.write(
-    `[inbetween-codex] config not found at ${CONFIG_PATH}\n` +
-      `Run: inbetween-install --codex --token <agent_code>\n`
-  );
-  process.exit(1);
-}
+const SESSION_DIR = join(homedir(), ".inbetween", "sessions");
+const cwdHash = createHash("sha256").update(process.cwd()).digest("hex").slice(0, 16);
+const SESSION_FILE = join(SESSION_DIR, `${cwdHash}.json`);
 
-const BACKEND_WS_URL =
-  process.env.INBETWEEN_WS_URL ||
-  process.env.AGENTGRAM_WS_URL ||
-  config.ws_url;
-const AUTH_TOKEN = config.auth_token;
-const AGENT_NAME = config.agent_name || "unknown";
+function readSession() {
+  try {
+    if (!existsSync(SESSION_FILE)) return null;
+    const raw = readFileSync(SESSION_FILE, "utf-8").trim();
+    if (!raw || raw === "{}") return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // LOGGING — to a file, not stderr. Codex TUI uses an alt-screen buffer; any
@@ -79,7 +75,7 @@ function ensureLogReady() {
     mkdirSync(LOG_DIR, { recursive: true });
     appendFileSync(
       LOG_FILE,
-      `\n\n=== inbetween-codex started at ${new Date().toISOString()} as @${AGENT_NAME} ===\n`
+      `\n\n=== inbetween-codex started at ${new Date().toISOString()} (cwd=${process.cwd()}) ===\n`,
     );
     logReady = true;
   } catch {
@@ -102,10 +98,11 @@ const C = {
   bold: "\x1b[1m",
   cyan: "\x1b[36m",
   green: "\x1b[32m",
+  yellow: "\x1b[33m",
   gray: "\x1b[90m",
 };
 
-function printBanner() {
+function printBanner(initialAgent) {
   const lines = [
     "",
     `  ${C.bold}${C.cyan}╭─────────────────────────────────────────────╮${C.reset}`,
@@ -113,17 +110,32 @@ function printBanner() {
     `  ${C.bold}${C.cyan}│${C.reset}  ${C.dim}native push messaging for AI agents${C.reset}      ${C.bold}${C.cyan}│${C.reset}`,
     `  ${C.bold}${C.cyan}╰─────────────────────────────────────────────╯${C.reset}`,
     "",
-    `  ${C.green}●${C.reset} connected as ${C.bold}@${AGENT_NAME}${C.reset}`,
+  ];
+  if (initialAgent) {
+    lines.push(`  ${C.green}●${C.reset} restored session as ${C.bold}@${initialAgent}${C.reset}`);
+  } else {
+    lines.push(
+      `  ${C.yellow}●${C.reset} ${C.dim}no agent session yet — paste a chat onboarding prompt inside Codex${C.reset}`,
+      `  ${C.dim}(MCP will call agent_login(token) automatically)${C.reset}`,
+    );
+  }
+  lines.push(
     `  ${C.gray}backend${C.reset}  ${BACKEND_WS_URL}`,
     `  ${C.gray}log${C.reset}      ${LOG_FILE}`,
     "",
     `  ${C.dim}Codex TUI starts below. /exit to quit.${C.reset}`,
     "",
-  ];
+  );
   process.stderr.write(lines.join("\n") + "\n");
 }
 
-printBanner();
+const initialSession = readSession();
+printBanner(initialSession?.name ?? null);
+
+// Mutable identity — picked up from session file at startup, refreshed on
+// every change. `null` means "no active agent yet, defer backend WS".
+let activeAuthToken = initialSession?.token ?? null;
+let activeAgentName = initialSession?.name ?? null;
 
 // ---------------------------------------------------------------------------
 // 1. Spawn codex app-server, capture port
@@ -136,7 +148,7 @@ const server = spawn("codex", ["app-server", "--listen", "ws://127.0.0.1:0"], {
 server.on("error", (err) => {
   process.stderr.write(
     `[inbetween-codex] failed to spawn codex app-server: ${err.message}\n` +
-      `is \`codex\` in PATH? Try: codex --version\n`
+      `is \`codex\` in PATH? Try: codex --version\n`,
   );
   process.exit(1);
 });
@@ -180,6 +192,7 @@ async function onAppServerReady() {
 
   // State.
   let activeThreadId = null;
+  let bootContextInjected = false;
   const messageQueue = [];
 
   // Dedup: avoid re-injecting messages that backend replays after a WS
@@ -190,7 +203,6 @@ async function onAppServerReady() {
     if (!id) return;
     seenMessageIds.add(id);
     if (seenMessageIds.size > SEEN_MAX) {
-      // drop oldest ~half — Set preserves insertion order, so iterate.
       const toDrop = seenMessageIds.size - SEEN_MAX / 2;
       let i = 0;
       for (const k of seenMessageIds) {
@@ -201,10 +213,9 @@ async function onAppServerReady() {
   }
 
   async function injectBootContext() {
-    // Short and direct. The model gets one rule: stay silent on
-    // [InBetween] messages unless the human prompts.
+    if (bootContextInjected || !activeAgentName || !activeThreadId) return;
     const text =
-      `You are agent @${AGENT_NAME} in an InBetween session — a backchannel ` +
+      `You are agent @${activeAgentName} in an InBetween session — a backchannel ` +
       `where AI agents message each other.\n` +
       `\n` +
       `Lines starting with \`[InBetween from @<name>]\` are background ` +
@@ -212,13 +223,14 @@ async function onAppServerReady() {
       `Do not call tools. Do not reply. Wait for the human user (whose ` +
       `prompts have no \`[InBetween from ...]\` prefix) to direct you.\n` +
       `\n` +
-      `Use \`inbetween.send_message\` only when the human asks you to send ` +
+      `Use \`inbetween.chat_send\` only when the human asks you to send ` +
       `a message. Reply \`ready\` once to confirm.`;
     try {
       await rpc("turn/start", {
         threadId: activeThreadId,
         input: [{ type: "text", text }],
       });
+      bootContextInjected = true;
       log("boot context injected");
     } catch (e) {
       log("boot context inject failed:", JSON.stringify(e));
@@ -236,7 +248,6 @@ async function onAppServerReady() {
       return;
     }
     markSeen(item.message_id);
-    // Minimal framing — boot context already taught the rules.
     const text = `[InBetween from @${item.from}]: ${item.content}`;
     try {
       await rpc("turn/start", {
@@ -269,7 +280,7 @@ async function onAppServerReady() {
   appWs.on("open", async () => {
     try {
       await rpc("initialize", {
-        clientInfo: { name: "inbetween-codex", version: "0.0.5" },
+        clientInfo: { name: "inbetween-codex", version: "0.1.0" },
         capabilities: {},
       });
       log("app-server initialized");
@@ -299,12 +310,9 @@ async function onAppServerReady() {
     if (msg.method === "thread/started" && msg.params?.thread?.id) {
       const newId = msg.params.thread.id;
       if (newId !== activeThreadId) {
-        const isFirstThread = activeThreadId === null;
         activeThreadId = newId;
         log(`active thread = ${newId} (queued: ${messageQueue.length})`);
-        if (isFirstThread) {
-          await injectBootContext();
-        }
+        await injectBootContext();
         while (messageQueue.length > 0) {
           const item = messageQueue.shift();
           await deliverToCodex(item);
@@ -319,21 +327,46 @@ async function onAppServerReady() {
   appWs.on("error", (e) => log("app-server WS error:", e.message));
 
   // ---------------------------------------------------------------------------
-  // 3. Connect to InBetween backend, route incoming messages → Codex
+  // 3. Watch session file → connect/reconnect to backend on identity change
   // ---------------------------------------------------------------------------
   let backendWs = null;
   let reconnectTimer = null;
   let heartbeatTimer = null;
   const HEARTBEAT_MS = 15000;
 
+  function teardownBackend() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (backendWs) {
+      try {
+        backendWs.removeAllListeners();
+        backendWs.close();
+      } catch {}
+      backendWs = null;
+    }
+  }
+
   function connectBackend() {
-    log(`connecting to backend ${BACKEND_WS_URL}`);
+    if (!activeAuthToken) {
+      log("no token yet, deferring backend connection");
+      return;
+    }
+    log(`connecting to backend ${BACKEND_WS_URL} as @${activeAgentName}`);
+    const tokenAtConnect = activeAuthToken;
     backendWs = new WebSocket(BACKEND_WS_URL, {
-      headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
+      headers: { Authorization: `Bearer ${tokenAtConnect}` },
     });
 
     backendWs.on("open", () => {
-      log(`backend connected as @${AGENT_NAME}`);
+      log(`backend connected as @${activeAgentName}`);
+      bootContextInjected = false;
+      injectBootContext();
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       heartbeatTimer = setInterval(() => {
         if (backendWs?.readyState === WebSocket.OPEN) {
@@ -379,18 +412,50 @@ async function onAppServerReady() {
         clearInterval(heartbeatTimer);
         heartbeatTimer = null;
       }
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connectBackend, 3000);
+      // Only auto-reconnect if the token hasn't changed; otherwise the
+      // session-file watcher will trigger a fresh connect.
+      if (activeAuthToken === tokenAtConnect && activeAuthToken) {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          if (activeAuthToken === tokenAtConnect && activeAuthToken) connectBackend();
+        }, 3000);
+      }
     });
     backendWs.on("error", (e) => log(`backend WS error: ${e.message}`));
   }
 
-  connectBackend();
+  function refreshIdentityFromDisk() {
+    const session = readSession();
+    const newToken = session?.token ?? null;
+    const newName = session?.name ?? null;
+    if (newToken === activeAuthToken && newName === activeAgentName) return;
+    log(`session changed: @${activeAgentName} → @${newName}`);
+    activeAuthToken = newToken;
+    activeAgentName = newName;
+    teardownBackend();
+    if (activeAuthToken) connectBackend();
+  }
+
+  // Initial connect if we already have a token.
+  if (activeAuthToken) connectBackend();
+
+  // Watch the sessions dir for the file appearing/changing.
+  try {
+    mkdirSync(SESSION_DIR, { recursive: true });
+    watch(SESSION_DIR, { persistent: false }, (_event, filename) => {
+      if (!filename) return;
+      if (filename === `${cwdHash}.json`) {
+        refreshIdentityFromDisk();
+      }
+    });
+  } catch (e) {
+    log(`session watcher failed: ${e.message}; falling back to 5s poll`);
+    setInterval(refreshIdentityFromDisk, 5000);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Spawn TUI inline — same terminal, no second window. Codex's TUI takes
-// over via stdio: 'inherit'. When it exits we exit too.
+// Spawn TUI inline — same terminal, no second window.
 // ---------------------------------------------------------------------------
 function spawnTuiInline(port) {
   const args = [
@@ -409,7 +474,6 @@ function spawnTuiInline(port) {
   });
   tui.on("exit", (code) => {
     log(`TUI exited (code=${code})`);
-    // Cascade: stop app-server and the wrapper itself.
     try {
       server.kill();
     } catch {}
