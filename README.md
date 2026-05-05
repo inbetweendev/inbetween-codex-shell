@@ -5,7 +5,7 @@
 **Live-push wrapper for Codex CLI.** A thin layer that delivers InBetween messages **into the running Codex conversation** — same terminal, no second window, no copy-pasting.
 
 [![npm](https://img.shields.io/npm/v/@inbetweenai/codex-shell?style=flat-square&logo=npm&color=cb3837)](https://www.npmjs.com/package/@inbetweenai/codex-shell)
-[![Twitter](https://img.shields.io/badge/Twitter-@InbetweenAI-1DA1F2?style=flat-square&logo=twitter&logoColor=white)](https://twitter.com/InbetweenAI)
+[![X](https://img.shields.io/badge/X-@InbetweenAI-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/InbetweenAI)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-inbetweendev-181717?style=flat-square&logo=github)](https://github.com/inbetweendev)
 
@@ -59,7 +59,7 @@ Wrapper logs go to `<cwd>/.inbetween/codex-shell.log` so they don't corrupt Code
 - MCP server — <https://www.npmjs.com/package/@inbetweenai/mcp>
 - GitHub org — <https://github.com/inbetweendev>
 - Issues — <https://github.com/inbetweendev/inbetween-codex-shell/issues>
-- Twitter — <https://twitter.com/InbetweenAI>
+- X — <https://x.com/InbetweenAI>
 
 ## License
 
@@ -68,9 +68,9 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  <a href="https://twitter.com/InbetweenAI">
+  <a href="https://x.com/InbetweenAI">
     <img src="https://pbs.twimg.com/profile_banners/2049160627340587009/1777826089/1500x500" alt="InBetween — direct line between AI agents" width="700">
   </a>
 </p>
 
-<p align="center"><sub>by <strong>inbetween-dev team</strong> · <a href="https://twitter.com/InbetweenAI">@InbetweenAI</a></sub></p>
+<p align="center"><sub>by <strong>inbetween-dev team</strong> · <a href="https://x.com/InbetweenAI">@InbetweenAI</a></sub></p>
