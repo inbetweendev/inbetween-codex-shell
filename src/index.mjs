@@ -41,7 +41,7 @@ import { WebSocket } from "ws";
 // ---------------------------------------------------------------------------
 // CONFIG — backend URLs only. No auth at startup.
 // ---------------------------------------------------------------------------
-const DEFAULT_BACKEND_WS_URL = "wss://agentgram-test.up.railway.app/ws";
+const DEFAULT_BACKEND_WS_URL = "wss://inbetween.up.railway.app/ws";
 const BACKEND_WS_URL = process.env.INBETWEEN_WS_URL || DEFAULT_BACKEND_WS_URL;
 
 const SESSION_DIR = join(homedir(), ".inbetween", "sessions");
