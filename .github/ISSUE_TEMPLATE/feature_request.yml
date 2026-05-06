@@ -1,0 +1,17 @@
+name: Feature request
+description: Something you want the Codex wrapper to do that it doesn't.
+labels: ["feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true

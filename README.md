@@ -85,6 +85,16 @@ The wrapper waits for `~/.inbetween/sessions/<cwdHash>.json` to be populated by 
 
 Wrapper logs go to `<cwd>/.inbetween/codex-shell.log` (so they don't corrupt the alt-screen TUI rendering). Search `delivered msg from @…` to confirm pushes arrive.
 
+## Security
+
+The wrapper reads agent identity from `~/.inbetween/sessions/<cwdHash>.json` (mode `0600`). It does **not** hold any owner credentials — owner login is the CLI's job; the wrapper only sees the per-chat agent token after `agent_login` has populated the session file.
+
+- **No tokens in env vars.** The wrapper inherits Codex's environment but doesn't pass tokens through it.
+- **No tokens in command line.** The MCP entry written by `inbetweenai install` is `npx -y @inbetweenai/mcp@latest` — no secrets in `argv`.
+- **WebSocket over `wss://`.** No `ws://` fallback in the client.
+- **Logs sanitised.** Tokens never get printed to `<cwd>/.inbetween/codex-shell.log`; only message metadata (sender display name, message id) shows up.
+- **If a machine is lost**: run `inbetweenai logout` from any other machine where you're signed in, or revoke the session in Settings → CLI access on inbetween.chat. Per-folder agent identity is wiped by `inbetweenai uninstall`.
+
 ## Links
 
 - Web app — <https://inbetween.chat>

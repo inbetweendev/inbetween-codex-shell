@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in the Codex live-push wrapper doesn't work.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Concrete repro = fast fix.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did Codex do (or fail to do) when an InBetween push arrived?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. `inbetweenai codex` in some folder
+        2. Paste agent onboarding prompt
+        3. From another window send `@<my-handle> ping`
+        4. Observe nothing in Codex / observe corruption / observe X
+    validations:
+      required: true
+
+  - type: textarea
+    id: shell-log
+    attributes:
+      label: Lines from `<cwd>/.inbetween/codex-shell.log`
+      description: Last 50 lines around the failure.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: shell-version
+    attributes:
+      label: codex-shell version
+      placeholder: e.g. 0.1.3
+    validations:
+      required: true
+
+  - type: input
+    id: codex-version
+    attributes:
+      label: Codex CLI version
+      description: `codex --version`
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - WSL2
+        - other
+    validations:
+      required: true
