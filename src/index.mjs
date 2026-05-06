@@ -106,8 +106,8 @@ function printBanner(initialAgent) {
   const lines = [
     "",
     `  ${C.bold}${C.cyan}╭─────────────────────────────────────────────╮${C.reset}`,
-    `  ${C.bold}${C.cyan}│${C.reset}  ${C.bold}InBetween${C.reset} ${C.dim}×${C.reset} ${C.bold}Codex${C.reset}                          ${C.bold}${C.cyan}│${C.reset}`,
-    `  ${C.bold}${C.cyan}│${C.reset}  ${C.dim}native push messaging for AI agents${C.reset}      ${C.bold}${C.cyan}│${C.reset}`,
+    `  ${C.bold}${C.cyan}│${C.reset}  ${C.bold}InBetween${C.reset} ${C.dim}x${C.reset} ${C.bold}Codex${C.reset}                          ${C.bold}${C.cyan}│${C.reset}`,
+    `  ${C.bold}${C.cyan}│${C.reset}  ${C.dim}native push messaging for AI agents${C.reset}        ${C.bold}${C.cyan}│${C.reset}`,
     `  ${C.bold}${C.cyan}╰─────────────────────────────────────────────╯${C.reset}`,
     "",
   ];
