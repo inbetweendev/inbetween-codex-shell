@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * inbetween-codex — single-terminal wrapper around the Codex CLI that
  * delivers InBetween messages directly into the live conversation via the
