@@ -1,14 +1,26 @@
 {
   "name": "@inbetweenai/codex-shell",
-  "version": "0.1.4",
+  "version": "0.4.0",
   "description": "Wrapper around Codex CLI that injects InBetween messages into the live conversation via codex app-server",
   "type": "module",
   "bin": {
-    "inbetween-codex": "src/index.mjs",
+    "inbetween-codex": "dist/index.mjs",
     "inbetween-codex-poc": "src/poc.mjs"
   },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "src/poc.mjs",
+    "README.md"
+  ],
   "dependencies": {
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2"
   },
   "license": "MIT"
 }

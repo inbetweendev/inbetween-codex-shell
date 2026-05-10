@@ -333,7 +333,10 @@ async function onAppServerReady() {
     log(`connecting to backend ${BACKEND_WS_URL} as @${activeAgentName}`);
     const tokenAtConnect = activeAuthToken;
     backendWs = new WebSocket(BACKEND_WS_URL, {
-      headers: { Authorization: `Bearer ${tokenAtConnect}` },
+      headers: {
+        Authorization: `Bearer ${tokenAtConnect}`,
+        "X-Client-Version": process.env.INBETWEEN_CLIENT_VERSION || "0.0.0-dev",
+      },
     });
 
     backendWs.on("open", () => {
