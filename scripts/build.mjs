@@ -19,9 +19,9 @@ await build({
   target: "node18",
   format: "esm",
   outfile: "dist/index.mjs",
-  minify: true,
+  minify: false,
   sourcemap: false,
-  legalComments: "none",
+  legalComments: "inline",
   banner: { js: "#!/usr/bin/env node" },
   define: {
     "process.env.INBETWEEN_CLIENT_VERSION": JSON.stringify(pkg.version),
